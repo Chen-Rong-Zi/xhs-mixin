@@ -11,8 +11,11 @@ permissions:
       - xiaohongshu.com
       - edith.xiaohongshu.com
 
-# 凭证：xhs_cookie（service: xhs）—— proxy 把 Cookie 头注入到 edith.xiaohongshu.com
-# XHS_COOKIE 是容器内环境变量名，proxyManaged 表示由代理托管注入真实值
+# 凭证：service: xhs。注意：xhs-mcp 是 Puppeteer 浏览器自动化 server，不读 XHS_COOKIE 环境变量、
+# 工具也无 cookie 参数；容器内 XHS_COOKIE 只是宿主机托管凭证的占位符（信息性）。真实 cookie 通过
+# 两条路径获得：1) 沙箱内 xhs_auth_login 扫码登录（推荐，登录态写入 ~/.xhs-mcp/cookies.json）；
+# 2) 宿主机 ~/.config/sbx/credentials.yaml 中 xhs 的 binding + 出口代理注入（对浏览器流量未经实测）。
+# proxyManaged 表示代理可向注入域发请求时替换该占位符（仅对非浏览器 HTTP 流量有效）。
 credentials:
   - service: xhs
     description: "Xiaohongshu web/API cookie; keep it fresh — it expires and is fingerprint-linked."
@@ -37,9 +40,15 @@ agentInstructions:
     read the full instructions in `/workspace/context.md`.
 
     Available MCP tools under the `xhs-mcp` server:
-    - `xhs_search_note` — search notes by keyword
-    - `xhs_get_note_detail` — get a note's full detail by id
+    - `xhs_search_note` — search notes by keyword (`keyword` required)
+    - `xhs_get_note_detail` — get a note's full detail by id (`feed_id` + `xsec_token` required)
     - `xhs_discover_feeds` — discover recommended feeds
+    - `xhs_auth_login` — log in to Xiaohongshu (opens a browser to scan the app QR code)
+    - `xhs_auth_logout` — log out / clear saved cookies
+    - `xhs_auth_status` — check current login status
 
-    The `XHS_COOKIE` credential is injected as the `Cookie` header to
-    edith.xiaohongshu.com and xiaohongshu.com by the sandbox proxy.
+    xhs-mcp is a browser-automation server and does **not** read the `XHS_COOKIE`
+    environment variable; no tool accepts a cookie argument. Login state lives in
+    `~/.xhs-mcp/cookies.json`. To authenticate, call `xhs_auth_login` inside the
+    sandbox (scan the QR code with the Xiaohongshu app). See `/workspace/context.md`
+    for details.
