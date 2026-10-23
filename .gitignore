@@ -1,0 +1,10 @@
+# 构建产物
+dist/
+*.zip
+
+# macOS
+.DS_Store
+
+# 临时/日志
+*.log
+*.tmp

@@ -1,0 +1,45 @@
+schemaVersion: "2"
+kind: mixin
+name: xhs-query
+displayName: Xiaohongshu Query
+description: "Query Xiaohongshu notes and feeds via the xhs-mcp MCP server. Requires a Xiaohongshu cookie credential."
+
+# 网络白名单：只允许访问这两个域（严格最小化，遵循用户要求）
+permissions:
+  network:
+    allow:
+      - xiaohongshu.com
+      - edith.xiaohongshu.com
+
+# 凭证：xhs_cookie（service: xhs）—— proxy 把 Cookie 头注入到 edith.xiaohongshu.com
+# XHS_COOKIE 是容器内环境变量名，proxyManaged 表示由代理托管注入真实值
+credentials:
+  - service: xhs
+    description: "Xiaohongshu web/API cookie; keep it fresh — it expires and is fingerprint-linked."
+    apiKey:
+      name: XHS_COOKIE
+      proxyManaged: true
+      inject:
+        - domain: edith.xiaohongshu.com
+          header: Cookie
+          format: "%s"
+        - domain: xiaohongshu.com
+          header: Cookie
+          format: "%s"
+
+# instructions 指向 context.md（v2 的 agentInstructions.content 只收内联 markdown，不能直接指文件路径，
+# 所以这里写指引 + 通过 files/ 注入 context.md 到工作区，agent 可读）
+agentInstructions:
+  content: |
+    # XHS Query mixin
+
+    This sandbox can query Xiaohongshu (小红书). Before using the MCP tools,
+    read the full instructions in `/workspace/context.md`.
+
+    Available MCP tools under the `xhs-mcp` server:
+    - `xhs_search_note` — search notes by keyword
+    - `xhs_get_note_detail` — get a note's full detail by id
+    - `xhs_discover_feeds` — discover recommended feeds
+
+    The `XHS_COOKIE` credential is injected as the `Cookie` header to
+    edith.xiaohongshu.com and xiaohongshu.com by the sandbox proxy.
