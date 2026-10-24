@@ -1,0 +1,18 @@
+schemaVersion: "2"
+kind: mixin
+name: xhs-nopm
+description: apiKey.name without proxyManaged
+
+credentials:
+  - service: xhs
+    apiKey:
+      name: XHS_COOKIE
+      inject:
+        - domain: edith.xiaohongshu.com
+          header: Cookie
+          format: "%s"
+
+permissions:
+  network:
+    allow:
+      - edith.xiaohongshu.com

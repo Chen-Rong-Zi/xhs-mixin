@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "xhs-mcp": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "sh xhs-install-cookie.sh >/dev/null 2>&1; exec npx xhs-mcp mcp"
+      ]
+    }
+  }
+}

@@ -3,13 +3,15 @@
 一个 Docker Sandboxes (sbx) `schemaVersion: "2"` 的 **mixin kit**，让沙箱里的 agent 通过
 `xhs-mcp` MCP server 查询小红书（Xiaohongshu）帖子与信息流。
 
-- 网络白名单严格最小化：只允许 `xiaohongshu.com` / `edith.xiaohongshu.com`。
+- 网络白名单覆盖 xiaohongshu 主机族 + 图片 CDN：`xiaohongshu.com` / `*.xiaohongshu.com` /
+  `xhscdn.com` / `*.xhscdn.com`（运行时搜索 API `so.xiaohongshu.com`、`as.xiaohongshu.com`、
+  图片 CDN `sns-webpic-qc.xhscdn.com` 等子域都在内）。
 - xhs-mcp 是 **Puppeteer 浏览器自动化** MCP server，驱动 `www.xiaohongshu.com` 页面并读取页面
   `__INITIAL_STATE__` 数据；登录态只从 `~/.xhs-mcp/cookies.json` 读取（appDataDir = `~/.xhs-mcp`），
-  **不读 `XHS_COOKIE` 环境变量，工具也无 cookie 参数**。
-- 容器内 `XHS_COOKIE` 只是宿主机 secret 的**占位符**（信息性）。真实让 xhs-mcp 用上的登录态走
-  **沙箱内 `xhs_auth_login`**（推荐）或 **宿主机 binding + 代理注入**（可选、对浏览器流量未实测）
-  两条路径，详见下文。
+  **不直接读 `XHS_COOKIE` 环境变量，工具也无 cookie 参数**。
+- Cookie bundle 由宿主机 sbx secret 托管（`sbx secret set xhs`），创建沙箱时用 `--env XHS_COOKIE`
+  注入沙箱环境，再在沙箱内跑 `xhs-install-cookie.sh` 清洗成 `~/.xhs-mcp/cookies.json`（详见
+  「凭证提供方式」）；备选：沙箱内 `xhs_auth_login` 扫码登录。
 - 提供 MCP 配置与使用指南，agent 在沙箱内即可调用 `xhs_search_note` / `xhs_get_note_detail` /
   `xhs_discover_feeds` 三个查询工具，以及 `xhs_auth_login` / `xhs_auth_logout` / `xhs_auth_status`
   三个登录工具。
@@ -24,8 +26,9 @@ xhs-mixin/
 ├── README.md                 # 本文件
 ├── files/
 │   └── workspace/
-│       ├── .mcp/xhs-mcp.json # 注入到工作区的 MCP 配置（claude 读取）
-│       └── context.md        # 注入到 /workspace/context.md 的使用指南
+│       ├── .mcp.json              # 工作区根的 MCP 配置（claude 只自动发现工作区根的 .mcp.json）
+│       ├── xhs-install-cookie.sh  # cookie 清洗安装脚本：$XHS_COOKIE → ~/.xhs-mcp/cookies.json
+│       └── context.md             # 注入到 /workspace/context.md 的使用指南
 └── scripts/
     ├── validate.sh           # sbx kit validate --offline
     └── build.sh              # sbx kit pack + 显示包内容
@@ -42,7 +45,10 @@ sbx kit validate ./xhs-mixin --offline
 # 2) 打包成 zip（可选，发布用）
 sbx kit pack ./xhs-mixin --output dist/xhs-query.kit.zip
 
-# 3) 加载 mixin 运行（宿主机，必须用 --kit；工作区 . 会挂载）
+# 3) 加载 mixin 运行（宿主机，必须用 --kit；工作区 . 会挂载）。
+#    若要让沙箱内 XHS_COOKIE 拿到真实 cookie bundle（xhs-install-cookie.sh 需要），
+#    创建时用 --env XHS_COOKIE 注入（裸 KEY 从当前宿主机环境读取，值来自 sbx secret 托管的那份 bundle）：
+#    XHS_COOKIE="$(cat ~/Downloads/www.xiaohongshu.com_json_*.json)" sbx run claude --kit ./xhs-mixin/ .
 sbx run claude --kit ./xhs-mixin/ .
 
 # 4) 若已有沙箱，也可用 sbx kit add 添加
@@ -70,86 +76,64 @@ secret = 小红书**网页登录 Cookie**：由 `a1` / `webId` / `web_session` �
 3. **方法③（拼装）**：若已有 `~/.xhs-mcp/cookies.json`，把其中各字段拼成 `name=value; name2=value2`
    的 Cookie 串。
 
-拿到 Cookie 串后可 `sbx secret set-custom` 登记为宿主机 custom secret（见下节），但 xhs-mcp 的
-**推荐**做法是在沙箱内 `xhs_auth_login` 直接扫码（见「凭证提供方式」）。
+拿到 Cookie 后按「凭证提供方式」把它作为 service secret 登记（`sbx secret set xhs`），并在创建
+沙箱时注入 `XHS_COOKIE`；然后跑 `xhs-install-cookie.sh` 即可让 xhs-mcp 用上（无需扫码）。
 
 ## 凭证提供方式
 
-xhs-mcp 的登录态默认在 `~/.xhs-mcp/cookies.json`。让 xhs-mcp 用上真实 cookie 有两条路径：
+xhs-mcp 的登录态默认在 `~/.xhs-mcp/cookies.json`。让 xhs-mcp 用上真实 cookie 的三条路径：
 
-- **路径 A：沙箱内登录（推荐）**。在沙箱里调用 `xhs_auth_login`（或 `npx xhs-mcp login`），弹出
-  浏览器后手机 App 扫码，登录态写入沙箱内 `~/.xhs-mcp/cookies.json`。`www.xiaohongshu.com` 已在
-  网络白名单内，沙箱可直接访问。此路径不依赖宿主机托管任何 secret。
-- **路径 B：宿主机 custom secret + 代理注入（可选）**。`sbx secret set-custom` 把 Cookie 登记在
-  宿主机 secret 存储，把占位符值设进容器 `XHS_COOKIE` 环境变量；若 `~/.config/sbx/credentials.yaml`
-  有 service `xhs` 的 binding，沙箱出口代理会向白名单域请求注入 Cookie 头。
-  **注意**：xhs-mcp 本身不读 `XHS_COOKIE` 环境变量（它是浏览器自动化，不是 HTTP 请求客户端），
-  且该注入路径对浏览器流量**未经实测**——因此优先用路径 A。
+- **路径 A（推荐）：secret → env → 清洗安装**。Cookie bundle（Chrome「导出 cookies」JSON 数组，
+  15 条）由宿主机 sbx secret 托管，创建沙箱时用 `--env XHS_COOKIE` 注入沙箱环境，沙箱内跑
+  `xhs-install-cookie.sh` 清洗（去掉 session cookie 的 `expires`、把 float `expirationDate` 截成
+  int `expires`）写入 `~/.xhs-mcp/cookies.json`。这是**幂等、可脚本化**的路径，登录态与宿主机
+  保持同步，cookie 过期时重登后重跑一次即可。
+- **路径 B：沙箱内扫码登录**。在沙箱里调用 `xhs_auth_login`（或 `npx xhs-mcp login`），弹出浏览器
+  后手机 App 扫码，登录态写入沙箱内 `~/.xhs-mcp/cookies.json`。`*.xiaohongshu.com` 在网络白名单
+  内，沙箱可直接访问。此路径不依赖宿主机托管 secret，但登录态只活在沙箱里。
+- **路径 C（可选）：宿主机 binding + 代理注入**。`~/.config/sbx/credentials.yaml` 有 service `xhs`
+  的 binding 时，沙箱出口代理向白名单域（`edith.xiaohongshu.com` / `xiaohongshu.com` 等）的请求
+  注入 Cookie 头。**注意**：xhs-mcp 本身不读 `XHS_COOKIE` 环境变量（它是浏览器自动化，不是 HTTP
+  请求客户端），该注入路径对浏览器流量**未经实测**——不要依赖它，用路径 A。
+
+### 宿主机登记命令（路径 A）
 
 ```bash
-# 路径 B 的登记命令（宿主机）：
-# 推荐：cookie 存到 0600 文件，用 --command 读取，避免明文进 shell 历史/进程列表
-read -rs -p 'XHS cookie: ' c && umask 077 && printf '%s' "$c" > ~/.xhs_cookie
-sbx secret set-custom \
-  --host xiaohongshu.com --host edith.xiaohongshu.com \
-  --env XHS_COOKIE \
-  --command "cat $HOME/.xhs_cookie"
+# 1) cookie bundle（Chrome 导出的 JSON 数组文件）存为 service secret "xhs"
+printf '%s' "$(cat ~/Downloads/www.xiaohongshu.com_json_*.json)" | sbx secret set xhs
+sbx secret ls                       # 应看到 service 类型 xhs (stored)
 
-# 或从环境变量传入（值不进 shell 历史，但运行瞬间对 ps 可见）：
-# sbx secret set-custom --host xiaohongshu.com --host edith.xiaohongshu.com \
-#   --env XHS_COOKIE --value "$XHS_COOKIE"
+# 2) 创建沙箱时把同一份 bundle 注入 XHS_COOKIE（裸 KEY 从当前宿主机环境读取）
+XHS_COOKIE="$(cat ~/Downloads/www.xiaohongshu.com_json_*.json)" \
+  sbx run claude --kit ./xhs-mixin/ .
 
-sbx secret ls   # 查看占位符
-sbx secret rm --placeholder <PLACEHOLDER> -f   # 移除/更新
+# 3) 沙箱内（工作区根目录）清洗安装：
+#    sh xhs-install-cookie.sh
+#    预期输出 "Installed 15 cookies"，其中 2 个 session（无 expires）。
 ```
 
-> **警告**：切勿把真实 cookie 直接粘贴进 `--value` 命令行参数——会落入 shell 历史与进程列表。
-> `--command` 的 helper 路径必须是**绝对路径**，且位于共享挂载之外。
+> **警告**：`XHS_COOKIE=$(cat …)` 的值只在创建瞬间进进程环境，不写入任何 kit 文件。切勿把 cookie
+> 直接粘贴进 `--env XHS_COOKIE='…'` 的字面量（会落 shell 历史/进程列表）。
 
-注意：本地模式的 `sbx secret set-custom` 不支持 `--name`/`--header`/`--format`（这些是
-`--cloud` 专属）；`xhs` 也非内置服务，不要用 `sbx secret set xhs`。
+### binding 与 proxyManaged 的作用
 
-### 首次运行可能看到 `no binding authorizes xhs`
+- kit 的 `credentials[].apiKey.name: XHS_COOKIE` + `proxyManaged: true` 声明了 service `xhs` 的
+  gated credential：**没有 binding 时创建沙箱会打印**
+  `Note: no binding authorizes xhs — the credential was not injected. …`（第三方 kit 凭证的默认
+  行为，非 bug）。本仓库已在 `~/.config/sbx/credentials.yaml` 为 `xhs` 添加 binding（domains 覆盖
+  `*.xiaohongshu.com` / `*.xhscdn.com` 族），创建时不再告警。
+- `proxyManaged: true` 时引擎默认把容器内 `XHS_COOKIE` 设为哨兵 `proxy-managed`；**显式传入的
+  `--env XHS_COOKIE` 会覆盖哨兵**（实测生效），两者可共存：路径 A 读 `--env` 的真实值，路径 C 的
+  代理注入照常工作。没有 binding 也不影响路径 A（`--env` 独立于 binding）。
 
-用 `sbx run claude --kit ./xhs-mixin/ .` 创建沙箱时，即使已用上面的命令设好 custom secret，
-输出里仍可能出现：
+## 泄密面（XHS_COOKIE 与 .mcp.json）
 
-```
-Note: no binding authorizes xhs — the credential was not injected. Create a binding
-(re-run interactively, or edit ~/.config/sbx/credentials.yaml) to use it.
-```
-
-含义：custom secret 的 env 占位符替换**已生效**（沙箱内 `XHS_COOKIE` = 占位符值）；但 kit 的
-`credentials[].service: xhs` 声明把 xhs 标记为 **gated credential service**，其「代理注入 Cookie
-头」路径需要宿主机有对应 **binding** 才激活，否则就打印上面的提示。这是 sbx 的正常行为（所有 kit
-声明的凭证都要求宿主绑定，如 `ANTHROPIC_API_KEY` 同理），不是 bug。
-
-**即使不建 binding，沙箱内 `xhs_auth_login` 也能正常使用**——xhs-mcp 不依赖 `XHS_COOKIE`，它
-自己在沙箱内扫码登录写 `~/.xhs-mcp/cookies.json`，可以完全绕过 binding 直接可用。
-
-解决办法（任选其一）：
-
-1. 交互式：不带 `--detach` 运行 `sbx run claude --kit ./xhs-mixin/ .`，按提示绑定 xhs 凭证；
-2. 手动：编辑 `~/.config/sbx/credentials.yaml` 添加 service `xhs` 的 binding（sbx 官方提示
-   也是这么建议的；该文件的字段格式请参考 sbx 文档，勿凭猜测填写）。
-
-注入效果：
-
-- 容器环境变量 `XHS_COOKIE` 是**占位符值**（不是真实 cookie）。
-- 真实 cookie 只存在于宿主机 secret 存储；proxy 在发往 `edith.xiaohongshu.com` /
-  `xiaohongshu.com` 的请求头上做占位符→真实替换（仅对非浏览器 HTTP 流量有效；xhs-mcp 的浏览器
-  流量不走这条路径，其登录态来自沙箱内 `~/.xhs-mcp/cookies.json`）。
-
-spec.yaml 里的 `credentials[].apiKey.name: XHS_COOKIE`、`proxyManaged: true` 即对应这套托管逻辑。
-
-## 占位符与泄密面
-
-`.mcp/xhs-mcp.json` 里 `env.XHS_COOKIE: "${XHS_COOKIE}"` 由 claude 插值成容器里的**占位符值**
-（不是真实 cookie）。要强调：**xhs-mcp 不读 `XHS_COOKIE` 环境变量，工具也没有 cookie 参数**，所以
-`--env XHS_COOKIE` 的 custom secret 只是把占位符放进环境变量，服务于「宿主机 binding + 代理注入」
-路径（对浏览器流量未实测）；真正让 xhs-mcp 用上登录态、可靠的方式是**沙箱内 `xhs_auth_login`**
-扫码登录，登录态写入沙箱内 `~/.xhs-mcp/cookies.json`，之后所有工具自动带上该登录态。维护者不要
-误以为容器 env 里就是真实 cookie 值，也不要指望改 env 就能给 xhs-mcp 注入 cookie。
+工作区根的 `.mcp.json` 里 `env.XHS_COOKIE: "${XHS_COOKIE}"` 由 claude 从沙箱环境插值。创建沙箱时
+用了 `--env XHS_COOKIE` 的话，容器 env 就是**真实 cookie bundle**（不是哨兵），`.mcp.json` 插值也
+拿到真实值。注意 **xhs-mcp 本身不读 `XHS_COOKIE` 环境变量，工具也没有 cookie 参数**——让 xhs-mcp
+用上登录态的是路径 A 生成的 `~/.xhs-mcp/cookies.json`。真实值只存在于：宿主机 secret 存储、
+创建瞬间的宿主进程环境、以及沙箱 env / 清洗后的 `~/.xhs-mcp/cookies.json`；kit 文件里没有任何
+cookie 字面量。
 
 ## 预烘焙镜像（可选）
 
@@ -168,8 +152,8 @@ puppeteer 需要的 Chromium（`xhs-mcp` 通过无头 Chromium 抓取小红书�
 - **小红书反爬**：Cookie 与设备指纹绑定，API 有 461/460 反爬错误码、频率限制，风控严重时有封号风险；
   仅用于低频只读查询，避免批量抓取。
 - **Cookie 有效期**：登录 Cookie 会过期（几小时~几天），过期会导致搜索/详情接口返回 401/461。
-  cookie 过期后，在**沙箱内重新调用 `xhs_auth_login`**（或宿主机重新 `set-custom` 刷新）即可更新
-  登录态。
+  cookie 过期后重新导出 bundle → 宿主机 `sbx secret set xhs` 重存 → 重建沙箱并 `--env XHS_COOKIE`
+  → 沙箱内重跑 `xhs-install-cookie.sh`；或直接在**沙箱内重新调用 `xhs_auth_login`** 刷新登录态。
 - **合规**：仅供学习/个人低频查询，勿用于商业批量采集；数据版权归小红书。
 
 ## 验证命令（scripts/ 里也有）
@@ -191,6 +175,7 @@ bash scripts/build.sh       # sbx kit pack + 显示 inspect
 | `xhs_auth_status` | 查看当前登录状态 | — |
 
 所有工具都挂在 `xhs-mcp` MCP server 下；**没有任何工具带 cookie 参数**，xhs-mcp 的登录态由
-`~/.xhs-mcp/cookies.json` 提供（沙箱内 `xhs_auth_login` 生成）。`browser_path` 可选，指向自定义
-Chromium 可执行文件路径，默认使用 xhs-mcp 自动安装的浏览器。`.mcp/xhs-mcp.json` 的
-`env.XHS_COOKIE: "${XHS_COOKIE}"` 只是容器内的占位符值（见「占位符与泄密面」），不参与登录态。
+`~/.xhs-mcp/cookies.json` 提供（路径 A 的 `xhs-install-cookie.sh` 或路径 B 的 `xhs_auth_login`
+生成）。`browser_path` 可选，指向自定义 Chromium 可执行文件路径，默认使用 xhs-mcp 自动安装的
+浏览器。工作区根 `.mcp.json` 的 `env.XHS_COOKIE: "${XHS_COOKIE}"` 由 claude 从沙箱环境插值；
+创建时用 `--env XHS_COOKIE` 注入后它就是真实 bundle（见「泄密面」），但 xhs-mcp 的登录态不靠它。

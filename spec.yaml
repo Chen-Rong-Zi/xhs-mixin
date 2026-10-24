@@ -4,18 +4,26 @@ name: xhs-query
 displayName: Xiaohongshu Query
 description: "Query Xiaohongshu notes and feeds via the xhs-mcp MCP server. Requires a Xiaohongshu cookie credential."
 
-# 网络白名单：只允许访问这两个域（严格最小化，遵循用户要求）
+# 网络白名单：覆盖 xiaohongshu 主机族 + 图片 CDN。
+# 运行时会用到：搜索 API so.xiaohongshu.com、站点 as.xiaohongshu.com / edith.xiaohongshu.com、
+# 图片 CDN sns-webpic-qc.xhscdn.com 等子域。*.xiaohongshu.com 是单标签通配（不含裸域 xiaohongshu.com，
+# 故两者都列）。
 permissions:
   network:
     allow:
       - xiaohongshu.com
-      - edith.xiaohongshu.com
+      - "*.xiaohongshu.com"
+      - xhscdn.com
+      - "*.xhscdn.com"
 
-# 凭证：service: xhs。注意：xhs-mcp 是 Puppeteer 浏览器自动化 server，不读 XHS_COOKIE 环境变量、
-# 工具也无 cookie 参数；容器内 XHS_COOKIE 只是宿主机托管凭证的占位符（信息性）。真实 cookie 通过
-# 两条路径获得：1) 沙箱内 xhs_auth_login 扫码登录（推荐，登录态写入 ~/.xhs-mcp/cookies.json）；
-# 2) 宿主机 ~/.config/sbx/credentials.yaml 中 xhs 的 binding + 出口代理注入（对浏览器流量未经实测）。
-# proxyManaged 表示代理可向注入域发请求时替换该占位符（仅对非浏览器 HTTP 流量有效）。
+# 凭证：service: xhs。主路径 = 把 Chrome 导出的 cookie JSON 数组（15 条）直接烘焙进 kit：
+#   cp ~/Downloads/www.xiaohongshu.com_json_*.json files/workspace/xhs-cookies.json
+# 该文件随沙箱创建落到工作区根（xhs-cookies.json），.mcp.json 的 server 包装在启动 xhs-mcp 前
+# 自动跑 files/workspace/xhs-install-cookie.sh（零手动步骤），清洗成 ~/.xhs-mcp/cookies.json
+# （xhs-mcp 唯一认的登录态）。xhs-mcp 本身不读 XHS_COOKIE 环境变量。
+# 备份路径：XHS_COOKIE 环境变量或显式文件参数（见脚本顶部）。
+# apiKey.name + proxyManaged: true 仅保留宿主机 binding + 出口代理向注入域注入 Cookie 头的
+# 可选路径；cookie 文件已在 .gitignore 中排除，绝不可提交。
 credentials:
   - service: xhs
     description: "Xiaohongshu web/API cookie; keep it fresh — it expires and is fingerprint-linked."

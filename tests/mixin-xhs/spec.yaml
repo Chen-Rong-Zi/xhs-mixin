@@ -1,0 +1,22 @@
+schemaVersion: "2"
+kind: mixin
+name: xhs
+displayName: Xiaohongshu cookie injection (test)
+description: minimal v2 mixin exercising credentials[].apiKey
+
+credentials:
+  - service: xhs
+    description: "Xiaohongshu web cookie"
+    required: false
+    apiKey:
+      name: XHS_COOKIE
+      proxyManaged: true
+      inject:
+        - domain: edith.xiaohongshu.com
+          header: Cookie
+          format: "%s"
+
+permissions:
+  network:
+    allow:
+      - edith.xiaohongshu.com

@@ -1,0 +1,19 @@
+schemaVersion: "2"
+kind: mixin
+name: xhs-warn
+description: inject domain not in network allow (expect warning)
+
+credentials:
+  - service: xhs
+    apiKey:
+      name: XHS_COOKIE
+      proxyManaged: true
+      inject:
+        - domain: edith.xiaohongshu.com
+          header: Cookie
+          format: "%s"
+
+permissions:
+  network:
+    allow:
+      - other.example.com

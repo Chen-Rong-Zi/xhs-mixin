@@ -8,3 +8,10 @@ dist/
 # 临时/日志
 *.log
 *.tmp
+*.swp
+
+# 凭证安全：真实 cookie bundle 绝不可提交（baked into files/workspace/）
+# 运行时生成的 ~/.xhs-mcp/cookies.json 在宿主机 ~/ 下，不在本仓库内，无需也不应入库。
+files/workspace/xhs-cookies.json
+**/xhs-cookies.json
+**/cookies.json
