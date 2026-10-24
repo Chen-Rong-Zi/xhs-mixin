@@ -1,17 +1,24 @@
-# 配套 Dockerfile：预烘焙 xhs-mcp MCP 运行时。
-# 目的：把 xhs-mcp 和它需要的 Chromium 预装进镜像，避免沙箱运行时访问 npm。
+# 配套 Dockerfile：预烘焙 jobsonlook/xhs-mcp MCP 运行时。
+# 目的：把 Python 3.12+、uv 项目依赖和 Playwright Chromium 预装进镜像，避免沙箱运行时访问 PyPI。
 # 用法见 README：docker build -t xhs-mcp-runtime:1 .，然后用 sbx template / sbx run 使用该镜像。
-# 注意：xhs-mcp 通过无头 Chromium (puppeteer) 抓取小红书，必须装浏览器。
-# 基础镜像：优先固定到具体 patch 版本（如 node:22.11.0-slim）以保证可复现构建；
-# 但本环境 `docker manifest inspect node:22.11.0-slim` 无法解析（离线/无 daemon），
-# 暂保留浮动 tag；在能联网校验后可改回固定版本。
-FROM node:22-slim
+# 注意：jobsonlook/xhs-mcp 通过 Playwright 加载 www.xiaohongshu.com 获取签名运行时，必须装浏览器。
+# 构建时把内置补丁版 xhs-mcp-src/ 拷贝进镜像，运行时 `uv run --project` 即命中预烘焙的 .venv。
+FROM python:3.12-slim
 
-# 合并安装层：全局装 xhs-mcp，并用它自带的 browser 子命令安装与其 puppeteer 版本匹配的
-# Chromium（xhs-mcp browser 是 algovate/xhs-mcp CLI 的子命令，--with-deps 会装系统依赖）。
-RUN npm install -g xhs-mcp@0.8.13 --no-audit --no-fund \
-    && xhs-mcp browser --with-deps
+# uv + 系统依赖（Playwright Chromium 需要）
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /bin/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
 
-# XHS_ENABLE_LOGGING 是 xhs-mcp 的真实环境变量（npm 文档：XHS_ENABLE_LOGGING=true npx xhs-mcp mcp）
-ENV XHS_ENABLE_LOGGING=false
-CMD ["xhs-mcp", "mcp"]
+# 项目源码（内置补丁版，含 pyproject.toml）
+WORKDIR /app
+COPY files/workspace/xhs-mcp-src/ /app/xhs-mcp-src/
+
+# uv sync 装依赖 + 装 Chromium（--with-deps 装系统库）
+RUN cd /app/xhs-mcp-src \
+    && uv sync --frozen \
+    && uv run python -m playwright install --with-deps chromium
+
+# 默认命令（claude 会以 .mcp.json 的 command 启动，这里仅供手动验证）
+CMD ["uv", "run", "--project", "/app/xhs-mcp-src", "python", "-m", "xhs_mcp"]

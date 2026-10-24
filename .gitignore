@@ -15,3 +15,8 @@ dist/
 files/workspace/xhs-cookies.json
 **/xhs-cookies.json
 **/cookies.json
+
+# 内置补丁版 jobsonlook/xhs-mcp（files/workspace/xhs-mcp-src/）的运行时产物
+**/.venv/
+**/__pycache__/
+**/*.egg-info/

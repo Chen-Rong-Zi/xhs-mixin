@@ -19,8 +19,9 @@ permissions:
 # 凭证：service: xhs。主路径 = 把 Chrome 导出的 cookie JSON 数组（15 条）直接烘焙进 kit：
 #   cp ~/Downloads/www.xiaohongshu.com_json_*.json files/workspace/xhs-cookies.json
 # 该文件随沙箱创建落到工作区根（xhs-cookies.json），.mcp.json 的 server 包装在启动 xhs-mcp 前
-# 自动跑 files/workspace/xhs-install-cookie.sh（零手动步骤），清洗成 ~/.xhs-mcp/cookies.json
-# （xhs-mcp 唯一认的登录态）。xhs-mcp 本身不读 XHS_COOKIE 环境变量。
+# 自动跑 files/workspace/xhs-install-cookie.sh（零手动步骤），清洗成 ~/.xhs-mcp/cookies.json。
+# jobsonlook/xhs-mcp 优先读 $XHS_COOKIE（Cookie 串），未设置/为哨兵 proxy-managed 时回退读
+# ~/.xhs-mcp/cookies.json（kit 内置 resolve_cookie 补丁）——所以烘焙路径原样可用。
 # 备份路径：XHS_COOKIE 环境变量或显式文件参数（见脚本顶部）。
 # apiKey.name + proxyManaged: true 仅保留宿主机 binding + 出口代理向注入域注入 Cookie 头的
 # 可选路径；cookie 文件已在 .gitignore 中排除，绝不可提交。
@@ -48,15 +49,15 @@ agentInstructions:
     read the full instructions in `/workspace/context.md`.
 
     Available MCP tools under the `xhs-mcp` server:
-    - `xhs_search_note` — search notes by keyword (`keyword` required)
-    - `xhs_get_note_detail` — get a note's full detail by id (`feed_id` + `xsec_token` required)
-    - `xhs_discover_feeds` — discover recommended feeds
-    - `xhs_auth_login` — log in to Xiaohongshu (opens a browser to scan the app QR code)
-    - `xhs_auth_logout` — log out / clear saved cookies
-    - `xhs_auth_status` — check current login status
+    - `search_notes` — search notes by keyword (`keywords` required; `count`
+      optional — fetch up to that many posts, paginating)
+    - `get_note_content` — get a note's full detail by URL (`url` with `xsec_token`)
+    - `get_note_comments` — get a note's comments (`url` with `xsec_token`)
+    - `home_feed` — discover recommended feeds
+    - `check_cookie` — check current login status
+    - `post_comment` — post a comment (use with care)
 
-    xhs-mcp is a browser-automation server and does **not** read the `XHS_COOKIE`
-    environment variable; no tool accepts a cookie argument. Login state lives in
-    `~/.xhs-mcp/cookies.json`. To authenticate, call `xhs_auth_login` inside the
-    sandbox (scan the QR code with the Xiaohongshu app). See `/workspace/context.md`
-    for details.
+    xhs-mcp (jobsonlook/xhs-mcp) is a signed-API server; it reads the cookie from
+    `$XHS_COOKIE` or falls back to `~/.xhs-mcp/cookies.json` (written by
+    xhs-install-cookie.sh). No tool accepts a cookie argument. See
+    `/workspace/context.md` for details.

@@ -4,8 +4,12 @@
       "command": "sh",
       "args": [
         "-c",
-        "sh xhs-install-cookie.sh >/dev/null 2>&1; exec npx xhs-mcp mcp"
-      ]
+        "sh xhs-install-cookie.sh >/dev/null 2>&1; exec uv run --project ./xhs-mcp-src python -m xhs_mcp"
+      ],
+      "env": {
+        "NO_PROXY": "*",
+        "no_proxy": "*"
+      }
     }
   }
 }
